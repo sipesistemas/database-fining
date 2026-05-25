@@ -125,8 +125,8 @@ func TestAnalyzeParts_OverPartitioning(t *testing.T) {
 		Partitions: 365, MaxPartsPart: 3,
 	}}
 
-	if findTitle(analyzeParts(s), "over-partitioning") == nil {
-		t.Fatal("esperava finding de over-partitioning")
+	if findTitle(analyzeParts(s), "muitas partições com poucas linhas") == nil {
+		t.Fatal("esperava finding de muitas partições com poucas linhas")
 	}
 }
 
