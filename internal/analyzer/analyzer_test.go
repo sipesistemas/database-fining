@@ -125,8 +125,8 @@ func TestAnalyzeParts_OverPartitioning(t *testing.T) {
 		Partitions: 365, MaxPartsPart: 3,
 	}}
 
-	if findTitle(analyzeParts(s), "over-partitioning") == nil {
-		t.Fatal("esperava finding de over-partitioning")
+	if findTitle(analyzeParts(s), "muitas partições com poucas linhas") == nil {
+		t.Fatal("esperava finding de muitas partições com poucas linhas")
 	}
 }
 
@@ -165,6 +165,109 @@ func TestAnalyzeMerges_PoolSaturated(t *testing.T) {
 
 	if findTitle(analyzeMerges(s), "Pool de background quase saturado") == nil {
 		t.Fatal("esperava finding de pool saturado")
+	}
+}
+
+// prodSnapshot mirrors the small-RAM production host (24 GiB / 12 vCPU) with
+// the cache/concurrency settings observed on it.
+func prodSnapshot() *model.Snapshot {
+	s := baseSnapshot()
+	s.Hardware.LogicalCPUs = 12
+	s.Hardware.PhysicalCPUs = 12
+	s.Hardware.TotalMemory = 24 * gib
+	s.ServerSettings["max_server_memory_usage"] = model.ServerSetting{Name: "max_server_memory_usage", Value: "22675979059"}
+	s.ServerSettings["max_server_memory_usage_to_ram_ratio"] = model.ServerSetting{Name: "max_server_memory_usage_to_ram_ratio", Value: "0.9"}
+	s.ServerSettings["mark_cache_size"] = model.ServerSetting{Name: "mark_cache_size", Value: "5368709120"}
+	s.ServerSettings["index_mark_cache_size"] = model.ServerSetting{Name: "index_mark_cache_size", Value: "5368709120"}
+	s.ServerSettings["uncompressed_cache_size"] = model.ServerSetting{Name: "uncompressed_cache_size", Value: "8589934592"}
+	s.ServerSettings["use_uncompressed_cache"] = model.ServerSetting{Name: "use_uncompressed_cache", Value: "0"}
+	s.ServerSettings["max_concurrent_queries"] = model.ServerSetting{Name: "max_concurrent_queries", Value: "1000"}
+	s.ServerSettings["max_memory_usage"] = model.ServerSetting{Name: "max_memory_usage", Value: "0"}
+	return s
+}
+
+func TestAnalyzeMemory_HealthyBaseHasNoFindings(t *testing.T) {
+	if f := analyzeMemory(baseSnapshot()); len(f) != 0 {
+		t.Fatalf("snapshot saudável produziu %d findings de memória: %+v", len(f), f)
+	}
+}
+
+func TestAnalyzeMemory_MarkCacheTooLargeOnSmallRAM(t *testing.T) {
+	f := findTitle(analyzeMemory(prodSnapshot()), "mark_cache_size grande demais")
+	if f == nil {
+		t.Fatal("esperava finding de mark cache grande demais")
+	}
+	if f.Severity != model.SeverityWarning {
+		t.Errorf("severidade = %q, quer warning", f.Severity)
+	}
+	if got := f.ConfigKeys["mark_cache_size"]; got == "" || got == "5368709120" {
+		t.Errorf("config sugerida = %q, esperava valor reduzido", got)
+	}
+}
+
+func TestAnalyzeMemory_RatioStarvesPageCache(t *testing.T) {
+	f := findTitle(analyzeMemory(prodSnapshot()), "pouca folga para o page cache")
+	if f == nil {
+		t.Fatal("esperava finding de page cache faminta")
+	}
+	if f.ConfigKeys["max_server_memory_usage_to_ram_ratio"] != "0.80" {
+		t.Errorf("ratio sugerido = %q, quer 0.80", f.ConfigKeys["max_server_memory_usage_to_ram_ratio"])
+	}
+}
+
+func TestAnalyzeMemory_ConcurrencyTooHigh(t *testing.T) {
+	f := findTitle(analyzeMemory(prodSnapshot()), "max_concurrent_queries alto")
+	if f == nil {
+		t.Fatal("esperava finding de concorrência alta")
+	}
+	if f.Severity != model.SeverityWarning {
+		t.Errorf("severidade = %q, quer warning", f.Severity)
+	}
+}
+
+func TestAnalyzeMemory_NoPerQueryCap(t *testing.T) {
+	f := findTitle(analyzeMemory(prodSnapshot()), "Sem teto de memória por query")
+	if f == nil {
+		t.Fatal("esperava finding de max_memory_usage=0")
+	}
+	if f.ConfigScope != "profile" {
+		t.Errorf("escopo = %q, quer profile", f.ConfigScope)
+	}
+}
+
+func TestAnalyzeInserts_HealthyBaseHasNoFindings(t *testing.T) {
+	if f := analyzeInserts(baseSnapshot()); len(f) != 0 {
+		t.Fatalf("snapshot saudável produziu %d findings de insert: %+v", len(f), f)
+	}
+}
+
+func TestAnalyzeInserts_RaisedThrowWithAsyncOff(t *testing.T) {
+	s := baseSnapshot()
+	s.ServerSettings["parts_to_throw_insert"] = model.ServerSetting{Name: "parts_to_throw_insert", Value: "3000"}
+	s.ServerSettings["async_insert"] = model.ServerSetting{Name: "async_insert", Value: "0"}
+
+	f := findTitle(analyzeInserts(s), "parts_to_throw_insert elevado")
+	if f == nil {
+		t.Fatal("esperava finding de parts_to_throw_insert elevado")
+	}
+	if f.Severity != model.SeverityWarning {
+		t.Errorf("severidade = %q, quer warning", f.Severity)
+	}
+	if f.ConfigKeys["async_insert"] != "1" || f.ConfigScope != "profile" {
+		t.Errorf("esperava sugerir async_insert=1 no perfil, veio %+v / %q", f.ConfigKeys, f.ConfigScope)
+	}
+}
+
+func TestAnalyzeInserts_AsyncOffWithDefaultThresholds(t *testing.T) {
+	s := baseSnapshot()
+	s.ServerSettings["async_insert"] = model.ServerSetting{Name: "async_insert", Value: "0"}
+
+	f := findTitle(analyzeInserts(s), "async_insert desabilitado")
+	if f == nil {
+		t.Fatal("esperava finding info de async_insert desabilitado")
+	}
+	if f.Severity != model.SeverityInfo {
+		t.Errorf("severidade = %q, quer info", f.Severity)
 	}
 }
 

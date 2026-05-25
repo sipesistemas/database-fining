@@ -50,9 +50,9 @@ func analyzeParts(s *model.Snapshot) []model.Finding {
 				out = append(out, model.Finding{
 					Category:   model.CategoryParts,
 					Severity:   model.SeverityWarning,
-					Title:      fmt.Sprintf("%s: possível over-partitioning", name),
-					Detail:     fmt.Sprintf("%d partições, %d parts, média de %d linhas/part.", p.Partitions, p.PartCount, avgRowsPerPart),
-					Suggestion: "Granularidade fina de PARTITION BY (ex: por dia/hora) gera muitos parts pequenos. Considerar partições por mês.",
+					Title:      fmt.Sprintf("%s: muitas partições com poucas linhas", name),
+					Detail:     fmt.Sprintf("%d partições, %d parts, média de %d linhas/part. Partições pequenas demais geram muitos parts pequenos.", p.Partitions, p.PartCount, avgRowsPerPart),
+					Suggestion: "Duas causas possíveis: (1) PARTITION BY granular demais (ex: por dia/hora) — considerar agrupar por mês; ou (2) timestamps anômalos (datas fora da faixa real) espalhando linhas por meses fantasma. Verifique a distribuição com 'SELECT partition, sum(rows) FROM system.parts WHERE active AND table=... GROUP BY partition'; se a chave já for mensal, valide os valores de data na ingestão.",
 				})
 			}
 		}

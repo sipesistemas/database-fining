@@ -102,26 +102,39 @@ func (c *ClickHouse) queryVersion(ctx context.Context, snap *model.Snapshot) err
 // decisions. system.server_settings is available from 22.10+; we fall back to
 // system.settings names too since merge/pool knobs migrated over versions.
 func (c *ClickHouse) queryServerSettings(ctx context.Context, snap *model.Snapshot) error {
+	// Each source carries a precedence. Names clash across tables: e.g.
+	// parts_to_throw_insert exists both in system.settings (a session override
+	// defaulting to 0 = "use the table value") and in system.merge_tree_settings
+	// (the effective default, e.g. 3000). We keep the highest-precedence value so
+	// the analyzer sees the value that actually governs the server.
 	const q = `
-		SELECT name, toString(value), changed
+		SELECT name, toString(value), changed, 3 AS src
 		FROM system.server_settings
 		UNION ALL
-		SELECT name, toString(value), changed
+		SELECT name, toString(value), changed, 2 AS src
+		FROM system.merge_tree_settings
+		UNION ALL
+		SELECT name, toString(value), changed, 1 AS src
 		FROM system.settings`
 	rows, err := c.conn.Query(ctx, q)
 	if err != nil {
 		return fmt.Errorf("settings: %w", err)
 	}
 	defer rows.Close()
+	prec := map[string]uint8{}
 	for rows.Next() {
-		var s model.ServerSetting
-		if err := rows.Scan(&s.Name, &s.Value, &s.Changed); err != nil {
+		var (
+			s   model.ServerSetting
+			src uint8
+		)
+		if err := rows.Scan(&s.Name, &s.Value, &s.Changed, &src); err != nil {
 			return fmt.Errorf("scan setting: %w", err)
 		}
-		// server_settings wins over the per-profile settings on name clash.
-		if _, ok := snap.ServerSettings[s.Name]; !ok {
-			snap.ServerSettings[s.Name] = s
+		if cur, ok := prec[s.Name]; ok && cur >= src {
+			continue
 		}
+		snap.ServerSettings[s.Name] = s
+		prec[s.Name] = src
 	}
 	return rows.Err()
 }
