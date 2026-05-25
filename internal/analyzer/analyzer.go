@@ -18,6 +18,8 @@ type rule func(s *model.Snapshot) []model.Finding
 func Analyze(s *model.Snapshot) *model.Report {
 	rules := []rule{
 		analyzeHardware,
+		analyzeMemory,
+		analyzeInserts,
 		analyzeParts,
 		analyzeMerges,
 		analyzeMutations,
@@ -54,4 +56,18 @@ func settingInt(s *model.Snapshot, name string) (int64, bool) {
 		return 0, false
 	}
 	return n, true
+}
+
+// settingFloat reads a fractional server setting (e.g. a *_ratio), returning
+// ok=false when absent or unparseable.
+func settingFloat(s *model.Snapshot, name string) (float64, bool) {
+	v, ok := s.ServerSettings[name]
+	if !ok {
+		return 0, false
+	}
+	f, err := strconv.ParseFloat(v.Value, 64)
+	if err != nil {
+		return 0, false
+	}
+	return f, true
 }
