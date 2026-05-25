@@ -59,15 +59,6 @@ jobs:
     name: Build binaries
     needs: build-test
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        include:
-          - goos: linux
-            goarch: amd64
-          - goos: darwin
-            goarch: arm64
-          - goos: darwin
-            goarch: amd64
     steps:
       - uses: actions/checkout@v4
 
@@ -77,18 +68,16 @@ jobs:
           go-version: '1.26'
           cache: true
 
-      - name: Build ${{ matrix.goos }}/${{ matrix.goarch }}
+      - name: Build linux/amd64
         env:
-          GOOS: ${{ matrix.goos }}
-          GOARCH: ${{ matrix.goarch }}
+          GOOS: linux
+          GOARCH: amd64
           CGO_ENABLED: '0'
-        run: |
-          out="chfining-${{ matrix.goos }}-${{ matrix.goarch }}"
-          go build -trimpath -ldflags="-s -w" -o "dist/$out" ./cmd/chfining
+        run: go build -trimpath -ldflags="-s -w" -o dist/chfining-linux-amd64 ./cmd/chfining
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: chfining-${{ matrix.goos }}-${{ matrix.goarch }}
+          name: chfining-linux-amd64
           path: dist/*
           retention-days: 14
