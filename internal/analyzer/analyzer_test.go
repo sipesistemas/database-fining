@@ -171,7 +171,7 @@ func TestAnalyzeMerges_PoolSaturated(t *testing.T) {
 func TestAnalyze_SortsBySeverity(t *testing.T) {
 	s := baseSnapshot()
 	s.ServerSettings["max_server_memory_usage"] = model.ServerSetting{Name: "max_server_memory_usage", Value: "64000000000"} // crítico
-	s.ServerSettings["background_pool_size"] = model.ServerSetting{Name: "background_pool_size", Value: "8"}                  // warning
+	s.ServerSettings["background_pool_size"] = model.ServerSetting{Name: "background_pool_size", Value: "8"}                 // warning
 
 	rep := Analyze(s)
 	if len(rep.Findings) < 2 {
